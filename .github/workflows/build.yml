@@ -44,8 +44,7 @@ jobs:
 
       - name: Clone YTVideoOverlay
         run: |
-          cd YouPiP
-          git clone --quiet --depth=1 https://github.com/PoomSmart/YTVideoOverlay.git
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YTVideoOverlay.git YouPiP/YTVideoOverlay
 
       - name: Build YouPiP
         run: |
