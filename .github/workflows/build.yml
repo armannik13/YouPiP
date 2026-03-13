@@ -8,7 +8,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build YTUHD
+    name: Build YouPiP
     runs-on: macos-latest
     permissions:
       contents: write
@@ -49,6 +49,7 @@ jobs:
 
       - name: Build YouPiP
         run: |
+          cd YouPiP
           echo "YouPiP_VERSION=$(grep '^Version:' control | cut -d ' ' -f2)" >> $GITHUB_ENV
           make clean package DEBUG=0 FINALPACKAGE=1
           make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
