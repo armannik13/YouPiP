@@ -68,7 +68,7 @@ jobs:
           tag_name: v${{ env.YouPiP_VERSION }}
           name: v${{ env.YouPiP_VERSION }} 
           files: |
-             dev.water888.youpip_${{ env.YouPiP_VERSION }}_iphoneos-arm.deb
-             dev.water888.youpip_${{ env.YouPiP_VERSION }}_iphoneos-arm64.deb
-             dev.water888.youpip_${{ env.YouPiP_VERSION }}_iphoneos-arm64e.deb
+             com.ps.youpip_${{ env.YouPiP_VERSION }}_iphoneos-arm.deb
+             com.ps.youpip_${{ env.YouPiP_VERSION }}_iphoneos-arm64.deb
+             com.ps.youpip_${{ env.YouPiP_VERSION }}_iphoneos-arm64e.deb
           draft: true
