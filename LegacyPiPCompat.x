@@ -12,8 +12,6 @@
 #import <YouTubeHeader/YTHotConfig.h>
 #import <YouTubeHeader/YTLiveWatchPlaybackOverlayView.h>
 #import <YouTubeHeader/YTPlayerPIPController.h>
-#import <YouTubeHeader/YTPlayerViewControllerConfig.h>
-#import <YouTubeHeader/YTSystemNotifications.h>
 
 extern BOOL TweakEnabled();
 extern BOOL isPictureInPictureActive(MLPIPController *);
@@ -36,54 +34,89 @@ static void forceRenderViewTypeHot(YTIHamplayerHotConfig *hamplayerHotConfig) {
 }
 
 static void forceRenderViewType(YTHotConfig *hotConfig) {
-    YTIHamplayerHotConfig *hamplayerHotConfig = [hotConfig hamplayerHotConfig];
-    forceRenderViewTypeHot(hamplayerHotConfig);
+    forceRenderViewTypeHot([hotConfig hamplayerHotConfig]);
 }
 
-MLPIPController *(*InjectMLPIPController)(void);
-YTSystemNotifications *(*InjectYTSystemNotifications)(void);
-YTBackgroundabilityPolicy *(*InjectYTBackgroundabilityPolicy)(void);
-YTPlayerViewControllerConfig *(*InjectYTPlayerViewControllerConfig)(void);
-YTHotConfig *(*InjectYTHotConfig)(void);
+static MLPIPController *legacyMLPIPController(void) {
+    static MLPIPController *pip;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        pip = [[%c(MLPIPController) alloc] init];
+    });
+    return pip;
+}
 
-%group WithInjection
+static void setLegacyPIPControllerIfNeeded(id object) {
+    if (object && [object valueForKey:@"_pipController"] == nil)
+        [object setValue:legacyMLPIPController() forKey:@"_pipController"];
+}
 
-YTPlayerPIPController *initPlayerPiPControllerIfNeeded(YTPlayerPIPController *controller, id delegate, id parentResponder) {
-    if (controller) return controller;
-    controller = [[%c(YTPlayerPIPController) alloc] init];
-    MLPIPController *pip = InjectMLPIPController();
-    YTSystemNotifications *systemNotifications = InjectYTSystemNotifications();
-    YTBackgroundabilityPolicy *bgPolicy = InjectYTBackgroundabilityPolicy();
-    YTPlayerViewControllerConfig *playerConfig = InjectYTPlayerViewControllerConfig();
+static BOOL legacyInitPlayerPIPController(YTPlayerPIPController *controller, id delegate, id parentResponder) {
+    MLPIPController *pip = legacyMLPIPController();
+    if (!pip) return NO;
     [controller setValue:pip forKey:@"_pipController"];
-    [controller setValue:bgPolicy forKey:@"_backgroundabilityPolicy"];
-    [controller setValue:playerConfig forKey:@"_config"];
+
+    YTBackgroundabilityPolicy *bgPolicy = nil;
+    id playerConfig = nil;
     @try {
-        YTHotConfig *config = InjectYTHotConfig();
-        [controller setValue:config forKey:@"_hotConfig"];
+        bgPolicy = [delegate valueForKey:@"_backgroundabilityPolicy"];
+        playerConfig = [delegate valueForKey:@"_config"];
     } @catch (id ex) {}
+
+    if (bgPolicy) {
+        [controller setValue:bgPolicy forKey:@"_backgroundabilityPolicy"];
+        [bgPolicy addBackgroundabilityPolicyObserver:controller];
+    }
+
+    @try {
+        [controller setValue:delegate forKey:@"_delegate"];
+    } @catch (id ex) {}
+
+    if (playerConfig)
+        [controller setValue:playerConfig forKey:@"_config"];
+
+    [pip addPIPControllerObserver:controller];
+
     if (parentResponder) {
         @try {
             [controller setValue:parentResponder forKey:@"_parentResponder"];
         } @catch (id ex) {}
     }
-    [controller setValue:delegate forKey:@"_delegate"];
-    [bgPolicy addBackgroundabilityPolicyObserver:controller];
-    [pip addPIPControllerObserver:controller];
-    [systemNotifications addSystemNotificationsObserver:controller];
-    return controller;
+
+    return YES;
 }
+
+static void scheduleLegacyPlayerPIPController(id delegate, id parentResponder) {
+    if (!delegate) return;
+    __weak id weakDelegate = delegate;
+    id retainedParentResponder = parentResponder;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id local = weakDelegate;
+        if (!local || [local valueForKey:@"_playerPIPController"] != nil) return;
+        YTPlayerPIPController *controller = [[%c(YTPlayerPIPController) alloc] init];
+        if (!controller || !legacyInitPlayerPIPController(controller, local, retainedParentResponder)) return;
+        [local setValue:controller forKey:@"_playerPIPController"];
+    });
+}
+
+%group WithInjection
 
 %hook YTPlayerPIPController
 
 - (instancetype)initWithDelegate:(id)delegate {
-    YTPlayerPIPController *controller = %orig;
-    return initPlayerPiPControllerIfNeeded(controller, delegate, nil);
+    if (LegacyPiP() && !IS_IOS_OR_NEWER(iOS_15_0)) {
+        scheduleLegacyPlayerPIPController(delegate, nil);
+        return nil;
+    }
+    return %orig;
 }
 
 - (instancetype)initWithDelegate:(id)delegate parentResponder:(id)parentResponder {
-    YTPlayerPIPController *controller = %orig;
-    return initPlayerPiPControllerIfNeeded(controller, delegate, parentResponder);
+    if (LegacyPiP() && !IS_IOS_OR_NEWER(iOS_15_0)) {
+        scheduleLegacyPlayerPIPController(delegate, parentResponder);
+        return nil;
+    }
+    return %orig;
 }
 
 %end
@@ -92,15 +125,13 @@ YTPlayerPIPController *initPlayerPiPControllerIfNeeded(YTPlayerPIPController *co
 
 - (instancetype)initWithParentResponder:(id)arg1 config:(id)arg2 imageService:(id)arg3 lastActionController:(id)arg4 reachabilityController:(id)arg5 endscreenDelegate:(id)arg6 {
     self = %orig;
-    if (self && [self valueForKey:@"_pipController"] == nil)
-        [self setValue:InjectMLPIPController() forKey:@"_pipController"];
+    setLegacyPIPControllerIfNeeded(self);
     return self;
 }
 
 - (instancetype)initWithParentResponder:(id)arg1 config:(id)arg2 lastActionController:(id)arg3 reachabilityController:(id)arg4 endscreenDelegate:(id)arg5 {
     self = %orig;
-    if (self && [self valueForKey:@"_pipController"] == nil)
-        [self setValue:InjectMLPIPController() forKey:@"_pipController"];
+    setLegacyPIPControllerIfNeeded(self);
     return self;
 }
 
@@ -110,15 +141,13 @@ YTPlayerPIPController *initPlayerPiPControllerIfNeeded(YTPlayerPIPController *co
 
 - (instancetype)initWithStickySettings:(MLPlayerStickySettings *)stickySettings playerViewProvider:(MLPlayerPoolImpl *)playerViewProvider playerConfiguration:(void *)playerConfiguration {
     self = %orig;
-    if (self && [self valueForKey:@"_pipController"] == nil)
-        [self setValue:InjectMLPIPController() forKey:@"_pipController"];
+    setLegacyPIPControllerIfNeeded(self);
     return self;
 }
 
 - (instancetype)initWithStickySettings:(MLPlayerStickySettings *)stickySettings playerViewProvider:(MLPlayerPoolImpl *)playerViewProvider playerConfiguration:(void *)playerConfiguration mediaPlayerResources:(id)mediaPlayerResources {
     self = %orig;
-    if (self && [self valueForKey:@"_pipController"] == nil)
-        [self setValue:InjectMLPIPController() forKey:@"_pipController"];
+    setLegacyPIPControllerIfNeeded(self);
     return self;
 }
 
@@ -127,18 +156,17 @@ YTPlayerPIPController *initPlayerPiPControllerIfNeeded(YTPlayerPIPController *co
 %hook MLAVPlayer
 
 - (bool)isPictureInPictureActive {
-    return isPictureInPictureActive(InjectMLPIPController());
+    return LegacyPiP() ? isPictureInPictureActive(legacyMLPIPController()) : %orig;
 }
 
 %end
 
 %hook MLPlayerPoolImpl
 
-- (instancetype)init {
-    self = %orig;
-    if (self && [self valueForKey:@"_pipController"] == nil)
-        [self setValue:InjectMLPIPController() forKey:@"_pipController"];
-    return self;
+- (void)setActivePlayer:(id)player {
+    if (LegacyPiP() && !IS_IOS_OR_NEWER(iOS_15_0))
+        setLegacyPIPControllerIfNeeded(self);
+    %orig;
 }
 
 %end
@@ -147,8 +175,7 @@ YTPlayerPIPController *initPlayerPiPControllerIfNeeded(YTPlayerPIPController *co
 
 - (instancetype)initWithPlaceholderPlayerItem:(AVPlayerItem *)playerItem {
     self = %orig;
-    if (self && [self valueForKey:@"_pipController"] == nil)
-        [self setValue:InjectMLPIPController() forKey:@"_pipController"];
+    setLegacyPIPControllerIfNeeded(self);
     return self;
 }
 
@@ -158,8 +185,7 @@ YTPlayerPIPController *initPlayerPiPControllerIfNeeded(YTPlayerPIPController *co
 
 - (instancetype)initWithFrame:(CGRect)frame reelModel:(id)reelModel ghostViewManager:(id)ghostViewManager parentResponder:(id)parentResponder {
     self = %orig;
-    if (self && [self valueForKey:@"_pipController"] == nil)
-        [self setValue:InjectMLPIPController() forKey:@"_pipController"];
+    setLegacyPIPControllerIfNeeded(self);
     return self;
 }
 
@@ -169,10 +195,8 @@ YTPlayerPIPController *initPlayerPiPControllerIfNeeded(YTPlayerPIPController *co
 
 - (instancetype)init {
     self = %orig;
-    if (!IS_IOS_OR_NEWER(iOS_15_0)) {
-        MLPIPController *pip = InjectMLPIPController();
-        [pip addPIPControllerObserver:self];
-    }
+    if (!IS_IOS_OR_NEWER(iOS_15_0))
+        [legacyMLPIPController() addPIPControllerObserver:self];
     return self;
 }
 
@@ -400,16 +424,10 @@ static MLAVPlayer *makeAVPlayer(id self, MLVideo *video, MLInnerTubePlayerConfig
     NSBundle *bundle = [NSBundle bundleWithPath:bundlePath];
     if (bundle) {
         [bundle load];
-        bundlePath = [bundlePath stringByAppendingString:@"/Module_Framework"];
-        MSImageRef ref = MSGetImageByName([bundlePath UTF8String]);
-        InjectMLPIPController = (MLPIPController *(*)(void))MSFindSymbol(ref, "_InjectMLPIPController");
-        if (InjectMLPIPController) {
-            InjectYTSystemNotifications = (YTSystemNotifications *(*)(void))MSFindSymbol(ref, "_InjectYTSystemNotifications");
-            InjectYTBackgroundabilityPolicy = (YTBackgroundabilityPolicy *(*)(void))MSFindSymbol(ref, "_InjectYTBackgroundabilityPolicy");
-            InjectYTPlayerViewControllerConfig = (YTPlayerViewControllerConfig *(*)(void))MSFindSymbol(ref, "_InjectYTPlayerViewControllerConfig");
-            InjectYTHotConfig = (YTHotConfig *(*)(void))MSFindSymbol(ref, "_InjectYTHotConfig");
+        MSImageRef ref = MSGetImageByName([[bundlePath stringByAppendingString:@"/Module_Framework"] UTF8String]);
+        if (ref && MSFindSymbol(ref, "_InjectMLPIPController"))
             %init(WithInjection);
-        } else
+        else
             hasSampleBufferPiP = IS_IOS_OR_NEWER(iOS_14_0);
     } else
         hasSampleBufferPiP = YES;
@@ -417,14 +435,12 @@ static MLAVPlayer *makeAVPlayer(id self, MLVideo *video, MLInnerTubePlayerConfig
         %init(Compat);
         isLegacyVersion = YES;
     }
-    if (LegacyPiP()) {
+    if (LegacyPiP())
         %init(Legacy);
-    }
     if (!IS_IOS_OR_NEWER(iOS_14_0) || IS_IOS_OR_NEWER(iOS_15_0))
         return;
-    if (IS_IOS_OR_NEWER(iOS_14_2)) {
+    if (IS_IOS_OR_NEWER(iOS_14_2))
         %init(AVKit_iOS14_2_Up);
-    } else {
+    else
         %init(AVKit_preiOS14_2);
-    }
 }
