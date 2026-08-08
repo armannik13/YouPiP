@@ -20,4 +20,4 @@ On iOS 11 - 13, YouPiP forces Legacy PiP to work around PiP compatibility. It al
 
 This behavior is account-based. It can happen in one account but not the other.
 
-It is recommended to use a dedicated iOS YouTube client that works without issues while still using `AVPlayer`, check out [YTLite (verback2308)](https://github.com/verback2308/YTLite).
+It is recommended to use a dedicated iOS YouTube client that works without issues while still using `AVPlayer`, check out [Opaline)](https://github.com/verback2308/Opaline).
