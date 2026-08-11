@@ -27,7 +27,7 @@ jobs:
            
       - name: Download iOS SDK
         run: |
-          git clone --quiet --depth=1 -n --filter=tree:0 https://github.com/theos/sdks.git
+          git clone --quiet --depth=1 -n --filter=tree:0 https://github.com/Tonwalter888/iOS-SDKs.git
           cd iOS-SDKs
           git sparse-checkout set --no-cone iPhoneOS18.6.sdk
           git checkout
