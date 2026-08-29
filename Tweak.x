@@ -5,6 +5,7 @@
 #import <YouTubeHeader/ELMContainerNode.h>
 #import <YouTubeHeader/MLDefaultPlayerViewFactory.h>
 #import <YouTubeHeader/MLPIPController.h>
+#import <YouTubeHeader/MLPIPControllerImpl.h>
 #import <YouTubeHeader/QTMIcon.h>
 #import <YouTubeHeader/YTAppDelegate.h>
 #import <YouTubeHeader/YTAppViewControllerImpl.h>
@@ -295,6 +296,22 @@ static UIImage *pipImage() {
 %end
 
 #pragma mark - PiP Support
+
+%hook MLPIPControllerImpl
+
+- (void)activatePiPController {
+    %orig;
+    BOOL blockPiP = !UseAllPiPMethod() && (UsePiPButton() || UseTabBarPiPButton());
+    AVPictureInPictureController *avpip = [self valueForKey:@"_pictureInPictureController"];
+    if (blockPiP)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+        avpip.canStartPictureInPictureAutomaticallyFromInline = NO;
+    avpip.canStartAutomaticallyWhenEnteringBackground = !blockPiP;
+#pragma clang diagnostic pop
+}
+
+%end
 
 %hook MLPIPController
 
